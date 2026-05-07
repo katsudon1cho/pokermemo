@@ -56,16 +56,13 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-html, body {
-  overscroll-behavior-y: none;
-}
-
 body {
   margin: 0;
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
   -webkit-text-size-adjust: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -183,6 +180,21 @@ button {
 
 .link-button:active {
   opacity: 0.45;
+}
+
+.nav-select {
+  min-height: 32px;
+  padding: 4px 22px 4px 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 13px, calc(100% - 8px) 13px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
 }
 
 .primary-button,
@@ -821,7 +833,6 @@ button.row:active .chevron {
 .page-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
   overflow: hidden;
   background: var(--bg);
   pointer-events: none;
@@ -830,99 +841,44 @@ button.row:active .chevron {
   will-change: transform, filter;
 }
 
-.page-overlay-inner {
-  position: relative;
+.page-overlay > .screen,
+.page-overlay > .auth-card {
+  margin: 0;
+  padding-top: env(safe-area-inset-top);
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
-.page-overlay-inner > .screen,
-.page-overlay-inner > .auth-card {
-  margin: 0;
-  padding-top: env(safe-area-inset-top);
-}
-
-#app.page-in-forward,
-#app.page-in-back,
-#app.page-prep {
+#app.page-anim {
   position: relative;
-  z-index: 60;
   transform: translateZ(0);
   backface-visibility: hidden;
-  will-change: transform;
-}
-
-/* Hold app at the animation start position while new content is being rendered */
-#app.page-in-forward.page-prep { transform: translate3d(100%, 0, 0); }
-#app.page-in-back.page-prep    { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
-
-#app.page-in-forward:not(.page-prep) {
-  animation: page-in-forward 360ms var(--ios-ease) both;
-}
-
-#app.page-in-back:not(.page-prep) {
-  animation: page-in-back 360ms var(--ios-ease) both;
-}
-
-.page-overlay.out-forward {
-  animation: page-out-forward 360ms var(--ios-ease) both;
-}
-
-.page-overlay.out-back {
-  z-index: 70;
-  animation: page-out-back 360ms var(--ios-ease) both;
-}
-
-@keyframes page-in-forward {
-  from { transform: translate3d(100%, 0, 0); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25); }
-  to   { transform: translate3d(0, 0, 0);    box-shadow: -8px 0 0 rgba(0, 0, 0, 0); }
-}
-
-@keyframes page-out-forward {
-  from { transform: translate3d(0, 0, 0);    filter: brightness(1); }
-  to   { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
-}
-
-@keyframes page-in-back {
-  from { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
-  to   { transform: translate3d(0, 0, 0);    filter: brightness(1); }
-}
-
-@keyframes page-out-back {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(100%, 0, 0); }
-}
-
-/* ---------- Swipe-back gesture (live drag) ---------- */
-
-#app.swipe-dragging,
-.page-overlay.swipe-dragging {
-  animation: none !important;
-  transition: none !important;
   will-change: transform, filter;
 }
 
-#app.swipe-snap-back,
-.page-overlay.swipe-snap-back {
-  transition: transform 220ms var(--ios-ease), filter 220ms var(--ios-ease);
+/* ---------- Fixed (non-scrolling) screens ---------- */
+
+.screen.screen-fixed {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-#app.swipe-complete {
-  transition: transform 260ms var(--ios-ease);
+.screen.screen-fixed > * {
+  flex-shrink: 0;
 }
 
-.page-overlay.swipe-complete {
-  transition: transform 260ms var(--ios-ease), filter 260ms var(--ios-ease);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #app.page-in-forward,
-  #app.page-in-back,
-  .page-overlay.out-forward,
-  .page-overlay.out-back,
-  .sheet,
-  .sheet-backdrop {
-    animation: none !important;
-    transition: none !important;
-  }
+.screen.screen-fixed > .table-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 8px auto;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 0.72 / 1;
+  max-width: calc(100vw - 28px);
 }

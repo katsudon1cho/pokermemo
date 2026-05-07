@@ -167,7 +167,10 @@ async function go(nextRoute, direction = "forward") {
   haptic(direction === "back" ? 6 : 10);
 
   const currentScreen = app.firstElementChild;
-  if (isFirstRender || reduceMotion() || !currentScreen || direction === "instant") {
+  const skip = isFirstRender || reduceMotion() || !currentScreen
+    || direction === "instant" || !app.animate;
+
+  if (skip) {
     route = nextRoute;
     isFirstRender = false;
     await render();
@@ -176,51 +179,66 @@ async function go(nextRoute, direction = "forward") {
 
   isTransitioning = true;
 
+  // Snapshot the current screen into a fixed-position overlay so it stays
+  // visible while we render the new content into #app.
   const overlay = document.createElement("div");
   overlay.className = "page-overlay";
-  const inner = document.createElement("div");
-  inner.className = "page-overlay-inner";
-  inner.appendChild(currentScreen.cloneNode(true));
-  overlay.appendChild(inner);
-
-  const enterClass = direction === "forward" ? "page-in-forward" : "page-in-back";
-  const exitClass = direction === "forward" ? "out-forward" : "out-back";
-
-  // Mount overlay and put app at the new starting position BEFORE the
-  // new content is painted, so the user never sees an unanimated frame
-  // of the new screen.
+  overlay.appendChild(currentScreen.cloneNode(true));
   document.body.appendChild(overlay);
-  app.classList.add(enterClass, "page-prep");
+
+  // Hide the new content until the animation can start; the user only sees
+  // the overlay during render. This avoids any "unanimated flash".
+  app.classList.add("page-anim");
+  app.style.visibility = "hidden";
 
   route = nextRoute;
   await render();
   window.scrollTo(0, 0);
+  app.style.visibility = "";
 
-  // Now release the prep state so the animation runs on the new content.
-  void app.offsetWidth;
-  app.classList.remove("page-prep");
-  overlay.classList.add(exitClass);
+  const isForward = direction === "forward";
+  const easing = "cubic-bezier(0.32, 0.72, 0, 1)";
+  const duration = 360;
 
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    overlay.remove();
-    app.classList.remove(enterClass);
-    isTransitioning = false;
-  };
+  // For forward: NEW slides in from right and is on top of OLD.
+  // For back: OLD slides off to the right (on top), NEW comes from -22% with parallax dim.
+  if (isForward) {
+    app.style.zIndex = "60";
+    overlay.style.zIndex = "50";
+  } else {
+    app.style.zIndex = "50";
+    overlay.style.zIndex = "60";
+  }
 
-  const onAnimationEnd = (event) => {
-    if (event.target !== app) return;
-    app.removeEventListener("animationend", onAnimationEnd);
-    cleanup();
-  };
-  app.addEventListener("animationend", onAnimationEnd);
-  // Safety net in case animationend never fires (background tab, etc.)
-  window.setTimeout(() => {
-    app.removeEventListener("animationend", onAnimationEnd);
-    cleanup();
-  }, 600);
+  const enterFrames = isForward
+    ? [{ transform: "translate3d(100%, 0, 0)" }, { transform: "translate3d(0, 0, 0)" }]
+    : [
+        { transform: "translate3d(-22%, 0, 0)", filter: "brightness(0.78)" },
+        { transform: "translate3d(0, 0, 0)", filter: "brightness(1)" }
+      ];
+
+  const exitFrames = isForward
+    ? [
+        { transform: "translate3d(0, 0, 0)", filter: "brightness(1)" },
+        { transform: "translate3d(-22%, 0, 0)", filter: "brightness(0.78)" }
+      ]
+    : [{ transform: "translate3d(0, 0, 0)" }, { transform: "translate3d(100%, 0, 0)" }];
+
+  const enterAnim = app.animate(enterFrames, { duration, easing, fill: "both" });
+  const exitAnim = overlay.animate(exitFrames, { duration, easing, fill: "both" });
+
+  try {
+    await Promise.all([enterAnim.finished, exitAnim.finished]);
+  } catch (_) {
+    // animation may be cancelled if a new transition starts
+  }
+
+  enterAnim.cancel();
+  exitAnim.cancel();
+  overlay.remove();
+  app.classList.remove("page-anim");
+  app.style.zIndex = "";
+  isTransitioning = false;
 }
 
 /* ---------- Global scroll: nav scrolled / large title collapse ---------- */
@@ -498,14 +516,8 @@ async function renderTable(sessionId) {
   }
 
   app.innerHTML = `
-    <main class="screen">
-      ${nav(session.casino_name, backButton())}
-      <div class="field">
-        <label>席数</label>
-        <select class="select" id="seat-count">
-          ${SEAT_COUNTS.map((count) => `<option value="${count}" ${count === session.seat_count ? "selected" : ""}>${count}-max</option>`).join("")}
-        </select>
-      </div>
+    <main class="screen screen-fixed">
+      ${nav(session.casino_name, backButton(), `<select class="nav-select" id="seat-count">${SEAT_COUNTS.map((count) => `<option value="${count}" ${count === session.seat_count ? "selected" : ""}>${count}-max</option>`).join("")}</select>`)}
       <div class="table-wrap">
         <div class="felt">${session.seat_count}-max</div>
         ${renderSeats(session)}
