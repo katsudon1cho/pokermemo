@@ -182,26 +182,45 @@ async function go(nextRoute, direction = "forward") {
   inner.className = "page-overlay-inner";
   inner.appendChild(currentScreen.cloneNode(true));
   overlay.appendChild(inner);
+
+  const enterClass = direction === "forward" ? "page-in-forward" : "page-in-back";
+  const exitClass = direction === "forward" ? "out-forward" : "out-back";
+
+  // Mount overlay and put app at the new starting position BEFORE the
+  // new content is painted, so the user never sees an unanimated frame
+  // of the new screen.
   document.body.appendChild(overlay);
+  app.classList.add(enterClass, "page-prep");
 
   route = nextRoute;
   await render();
   window.scrollTo(0, 0);
 
-  const enterClass = direction === "forward" ? "page-in-forward" : "page-in-back";
-  const exitClass = direction === "forward" ? "out-forward" : "out-back";
-
-  // Force reflow before adding animation classes
-  void overlay.offsetWidth;
-
-  app.classList.add(enterClass);
+  // Now release the prep state so the animation runs on the new content.
+  void app.offsetWidth;
+  app.classList.remove("page-prep");
   overlay.classList.add(exitClass);
 
-  await new Promise((resolve) => setTimeout(resolve, 380));
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    overlay.remove();
+    app.classList.remove(enterClass);
+    isTransitioning = false;
+  };
 
-  app.classList.remove(enterClass);
-  overlay.remove();
-  isTransitioning = false;
+  const onAnimationEnd = (event) => {
+    if (event.target !== app) return;
+    app.removeEventListener("animationend", onAnimationEnd);
+    cleanup();
+  };
+  app.addEventListener("animationend", onAnimationEnd);
+  // Safety net in case animationend never fires (background tab, etc.)
+  window.setTimeout(() => {
+    app.removeEventListener("animationend", onAnimationEnd);
+    cleanup();
+  }, 600);
 }
 
 /* ---------- Global scroll: nav scrolled / large title collapse ---------- */

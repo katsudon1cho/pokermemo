@@ -88,6 +88,7 @@ button {
 .app-shell {
   min-height: 100vh;
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  background: var(--bg);
 }
 
 .boot,
@@ -103,6 +104,7 @@ button {
   min-height: 100vh;
   margin: 0 auto;
   padding: 0 14px 28px;
+  background: var(--bg);
 }
 
 /* ---------- Nav (small title default) ---------- */
@@ -823,6 +825,8 @@ button.row:active .chevron {
   overflow: hidden;
   background: var(--bg);
   pointer-events: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   will-change: transform, filter;
 }
 
@@ -839,17 +843,24 @@ button.row:active .chevron {
 }
 
 #app.page-in-forward,
-#app.page-in-back {
+#app.page-in-back,
+#app.page-prep {
   position: relative;
   z-index: 60;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   will-change: transform;
 }
 
-#app.page-in-forward {
+/* Hold app at the animation start position while new content is being rendered */
+#app.page-in-forward.page-prep { transform: translate3d(100%, 0, 0); }
+#app.page-in-back.page-prep    { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
+
+#app.page-in-forward:not(.page-prep) {
   animation: page-in-forward 360ms var(--ios-ease) both;
 }
 
-#app.page-in-back {
+#app.page-in-back:not(.page-prep) {
   animation: page-in-back 360ms var(--ios-ease) both;
 }
 
@@ -863,23 +874,23 @@ button.row:active .chevron {
 }
 
 @keyframes page-in-forward {
-  from { transform: translateX(100%); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25); }
-  to   { transform: translateX(0);    box-shadow: -8px 0 0 rgba(0, 0, 0, 0); }
+  from { transform: translate3d(100%, 0, 0); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25); }
+  to   { transform: translate3d(0, 0, 0);    box-shadow: -8px 0 0 rgba(0, 0, 0, 0); }
 }
 
 @keyframes page-out-forward {
-  from { transform: translateX(0);    filter: brightness(1); }
-  to   { transform: translateX(-22%); filter: brightness(0.78); }
+  from { transform: translate3d(0, 0, 0);    filter: brightness(1); }
+  to   { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
 }
 
 @keyframes page-in-back {
-  from { transform: translateX(-22%); filter: brightness(0.78); }
-  to   { transform: translateX(0);    filter: brightness(1); }
+  from { transform: translate3d(-22%, 0, 0); filter: brightness(0.78); }
+  to   { transform: translate3d(0, 0, 0);    filter: brightness(1); }
 }
 
 @keyframes page-out-back {
-  from { transform: translateX(0); }
-  to   { transform: translateX(100%); }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(100%, 0, 0); }
 }
 
 /* ---------- Swipe-back gesture (live drag) ---------- */
