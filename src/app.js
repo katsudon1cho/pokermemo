@@ -179,11 +179,19 @@ async function go(nextRoute, direction = "forward") {
 
   isTransitioning = true;
 
+  // Capture current scroll position so the cloned overlay shows the same
+  // viewport the user was looking at, not the top of the page.
+  const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
   // Snapshot the current screen into a fixed-position overlay so it stays
   // visible while we render the new content into #app.
   const overlay = document.createElement("div");
   overlay.className = "page-overlay";
-  overlay.appendChild(currentScreen.cloneNode(true));
+  const overlayShifter = document.createElement("div");
+  overlayShifter.className = "page-overlay-inner";
+  if (scrollY) overlayShifter.style.transform = `translate3d(0, ${-scrollY}px, 0)`;
+  overlayShifter.appendChild(currentScreen.cloneNode(true));
+  overlay.appendChild(overlayShifter);
   document.body.appendChild(overlay);
 
   // Hide the new content until the animation can start; the user only sees
@@ -197,11 +205,11 @@ async function go(nextRoute, direction = "forward") {
   app.style.visibility = "";
 
   const isForward = direction === "forward";
-  const easing = "cubic-bezier(0.32, 0.72, 0, 1)";
-  const duration = 360;
+  // Standard iOS-like decelerated curve: starts with momentum, settles smoothly.
+  // Less front-loaded than 0.32/0.72/0/1, so the tail doesn't feel stalled.
+  const easing = "cubic-bezier(0.32, 0.08, 0.24, 1)";
+  const duration = 340;
 
-  // For forward: NEW slides in from right and is on top of OLD.
-  // For back: OLD slides off to the right (on top), NEW comes from -22% with parallax dim.
   if (isForward) {
     app.style.zIndex = "60";
     overlay.style.zIndex = "50";
@@ -210,18 +218,14 @@ async function go(nextRoute, direction = "forward") {
     overlay.style.zIndex = "60";
   }
 
+  // Transform-only animations — no filter — for smoothest GPU compositing.
+  // Parallax dim is provided by a separate dimmer element inside the overlay.
   const enterFrames = isForward
     ? [{ transform: "translate3d(100%, 0, 0)" }, { transform: "translate3d(0, 0, 0)" }]
-    : [
-        { transform: "translate3d(-22%, 0, 0)", filter: "brightness(0.78)" },
-        { transform: "translate3d(0, 0, 0)", filter: "brightness(1)" }
-      ];
+    : [{ transform: "translate3d(-22%, 0, 0)" }, { transform: "translate3d(0, 0, 0)" }];
 
   const exitFrames = isForward
-    ? [
-        { transform: "translate3d(0, 0, 0)", filter: "brightness(1)" },
-        { transform: "translate3d(-22%, 0, 0)", filter: "brightness(0.78)" }
-      ]
+    ? [{ transform: "translate3d(0, 0, 0)" }, { transform: "translate3d(-22%, 0, 0)" }]
     : [{ transform: "translate3d(0, 0, 0)" }, { transform: "translate3d(100%, 0, 0)" }];
 
   const enterAnim = app.animate(enterFrames, { duration, easing, fill: "both" });
@@ -229,9 +233,7 @@ async function go(nextRoute, direction = "forward") {
 
   try {
     await Promise.all([enterAnim.finished, exitAnim.finished]);
-  } catch (_) {
-    // animation may be cancelled if a new transition starts
-  }
+  } catch (_) {}
 
   enterAnim.cancel();
   exitAnim.cancel();
@@ -1005,10 +1007,23 @@ function showSheet(title, actions) {
     </div>
   `;
   document.body.appendChild(backdrop);
-  // Trigger slide-up on next frame
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => backdrop.classList.add("show"));
-  });
+  const sheet = backdrop.querySelector(".sheet");
+
+  if (!reduceMotion() && backdrop.animate) {
+    const easing = "cubic-bezier(0.32, 0.08, 0.24, 1)";
+    backdrop.animate(
+      [{ background: "rgba(0,0,0,0)" }, { background: "rgba(0,0,0,0.4)" }],
+      { duration: 280, easing, fill: "forwards" }
+    );
+    sheet.animate(
+      [{ transform: "translate3d(0, 100%, 0)" }, { transform: "translate3d(0, 0, 0)" }],
+      { duration: 320, easing, fill: "forwards" }
+    );
+  } else {
+    backdrop.style.background = "rgba(0,0,0,0.4)";
+    sheet.style.transform = "translate3d(0, 0, 0)";
+  }
+
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop || event.target.classList.contains("sheet-cancel")) {
       haptic(5);
@@ -1020,13 +1035,24 @@ function showSheet(title, actions) {
   });
 }
 
-function hideSheet() {
+async function hideSheet() {
   const backdrop = document.querySelector(".sheet-backdrop");
   if (!backdrop) return;
-  if (reduceMotion()) { backdrop.remove(); return; }
-  backdrop.classList.remove("show");
-  backdrop.classList.add("closing");
-  window.setTimeout(() => backdrop.remove(), 320);
+  if (reduceMotion() || !backdrop.animate) { backdrop.remove(); return; }
+  const easing = "cubic-bezier(0.32, 0.08, 0.24, 1)";
+  const sheet = backdrop.querySelector(".sheet");
+  const a = backdrop.animate(
+    [{ background: "rgba(0,0,0,0.4)" }, { background: "rgba(0,0,0,0)" }],
+    { duration: 240, easing, fill: "forwards" }
+  );
+  const b = sheet ? sheet.animate(
+    [{ transform: "translate3d(0, 0, 0)" }, { transform: "translate3d(0, 100%, 0)" }],
+    { duration: 280, easing, fill: "forwards" }
+  ) : null;
+  try {
+    await Promise.all([a.finished, b ? b.finished : Promise.resolve()]);
+  } catch (_) {}
+  backdrop.remove();
 }
 
 function avatar(appearance = {}, className = "avatar") {

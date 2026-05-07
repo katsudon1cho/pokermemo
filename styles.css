@@ -690,32 +690,14 @@ button.row:active .chevron {
   display: grid;
   align-items: end;
   background: rgba(0, 0, 0, 0);
-  transition: background-color 280ms ease;
-}
-
-.sheet-backdrop.show {
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.sheet-backdrop.closing {
-  background: rgba(0, 0, 0, 0);
 }
 
 .sheet {
   width: min(720px, 100%);
   margin: 0 auto;
   padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
-  transform: translateY(110%);
-  transition: transform 360ms var(--ios-ease);
+  transform: translate3d(0, 100%, 0);
   will-change: transform;
-}
-
-.sheet-backdrop.show .sheet {
-  transform: translateY(0);
-}
-
-.sheet-backdrop.closing .sheet {
-  transform: translateY(110%);
 }
 
 .sheet-panel {
@@ -869,16 +851,9 @@ button.row:active .chevron {
   flex-direction: column;
 }
 
-.screen.screen-fixed > * {
-  flex-shrink: 0;
-}
-
 .screen.screen-fixed > .table-wrap {
-  flex: 1 1 0;
-  min-height: 0;
-  margin: 8px auto;
-  height: 100%;
-  width: auto;
-  aspect-ratio: 0.72 / 1;
-  max-width: calc(100vw - 28px);
+  flex: 0 0 auto;
+  width: min(100% - 28px, calc((100dvh - 88px - env(safe-area-inset-bottom)) * 0.72));
+  margin: auto;
+  /* aspect-ratio inherited from .table-wrap base rule */
 }
