@@ -3,12 +3,14 @@
   --bg: #111315;
   --panel: #1b1f23;
   --panel-2: #272c31;
+  --panel-press: #232831;
   --text: #f2f4f6;
   --muted: #9ba3ad;
   --line: #323940;
   --nav-bg: rgba(17, 19, 21, 0.86);
   --nav-line: rgba(50, 57, 64, 0.78);
   --blue: #007aff;
+  --blue-press: #0a84ff;
   --green: #16835f;
   --red: #ff6961;
   --chip: #1f355f;
@@ -20,7 +22,10 @@
   --hero-bg: #0a3a66;
   --hero-line: #40a2ff;
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  --ios-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ios-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 [data-theme="light"] {
@@ -28,6 +33,7 @@
   --bg: #f7f7f8;
   --panel: #ffffff;
   --panel-2: #eef1f4;
+  --panel-press: #e9ecf0;
   --text: #15171a;
   --muted: #6c737c;
   --line: #d9dde3;
@@ -47,6 +53,11 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -54,6 +65,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+  -webkit-text-size-adjust: 100%;
 }
 
 button,
@@ -61,11 +73,16 @@ input,
 textarea,
 select {
   font: inherit;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 button {
   border: 0;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .app-shell {
@@ -88,6 +105,8 @@ button {
   padding: 0 14px 28px;
 }
 
+/* ---------- Nav (small title default) ---------- */
+
 .nav {
   position: sticky;
   top: 0;
@@ -100,7 +119,13 @@ button {
   padding: 0 14px;
   background: var(--nav-bg);
   backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--nav-line);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 200ms ease;
+}
+
+.nav.scrolled {
+  border-bottom-color: var(--nav-line);
 }
 
 .nav h1 {
@@ -118,11 +143,44 @@ button {
   justify-self: end;
 }
 
+/* ---------- Large title ---------- */
+
+.has-large-title .nav h1 {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.has-large-title .nav.collapsed h1 {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.large-title {
+  margin: 4px 4px 14px;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  transform-origin: left center;
+  transition: opacity 160ms ease;
+}
+
+.has-large-title .nav.collapsed + .large-title {
+  opacity: 0;
+}
+
+/* ---------- Buttons ---------- */
+
 .link-button {
   padding: 9px 4px;
   color: var(--blue);
   background: transparent;
   font-weight: 600;
+  transition: opacity 120ms ease;
+}
+
+.link-button:active {
+  opacity: 0.45;
 }
 
 .primary-button,
@@ -132,11 +190,17 @@ button {
   min-height: 48px;
   border-radius: 12px;
   font-weight: 700;
+  transition: transform 140ms var(--ios-ease), opacity 120ms ease, background-color 140ms ease;
 }
 
 .primary-button {
   background: var(--blue);
   color: white;
+}
+
+.primary-button:active {
+  transform: scale(0.97);
+  background: var(--blue-press);
 }
 
 .secondary-button {
@@ -145,9 +209,19 @@ button {
   border: 1px solid var(--line);
 }
 
+.secondary-button:active {
+  transform: scale(0.97);
+  background: var(--panel-press);
+}
+
 .danger-button {
   background: var(--danger-bg);
   color: var(--red);
+}
+
+.danger-button:active {
+  transform: scale(0.97);
+  opacity: 0.78;
 }
 
 .button-row {
@@ -168,6 +242,8 @@ button {
   text-transform: uppercase;
 }
 
+/* ---------- List rows (iOS grouped table) ---------- */
+
 .list {
   overflow: hidden;
   background: var(--panel);
@@ -176,6 +252,7 @@ button {
 }
 
 .row {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -187,6 +264,11 @@ button {
   background: var(--panel);
   text-align: left;
   border-bottom: 1px solid var(--line);
+  transition: background-color 120ms ease;
+}
+
+button.row:active {
+  background: var(--panel-press);
 }
 
 .row:last-child {
@@ -206,7 +288,14 @@ button {
 .chevron {
   color: #a6abb2;
   font-size: 24px;
+  transition: transform 120ms var(--ios-ease);
 }
+
+button.row:active .chevron {
+  transform: translateX(2px);
+}
+
+/* ---------- Inputs ---------- */
 
 .field {
   display: grid;
@@ -231,12 +320,30 @@ button {
   border: 1px solid var(--line);
   border-radius: 12px;
   outline: 0;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--blue);
+  background: var(--panel-press);
 }
 
 .textarea {
   min-height: 96px;
   resize: vertical;
 }
+
+.select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 22px, calc(100% - 13px) 22px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
+
+/* ---------- Auth screen ---------- */
 
 .auth-card {
   padding-top: 48px;
@@ -245,6 +352,8 @@ button {
 .app-title {
   margin: 0 0 8px;
   font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
 }
 
 .auth-copy {
@@ -257,6 +366,8 @@ button {
   gap: 10px;
   margin: 18px 0;
 }
+
+/* ---------- Segmented control ---------- */
 
 .segmented {
   display: grid;
@@ -273,6 +384,11 @@ button {
   background: transparent;
   border-radius: 9px;
   font-weight: 700;
+  transition: background-color 200ms var(--ios-ease), color 200ms var(--ios-ease), transform 140ms var(--ios-ease);
+}
+
+.segmented button:active {
+  transform: scale(0.96);
 }
 
 .segmented .active {
@@ -280,6 +396,8 @@ button {
   background: var(--panel);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
+
+/* ---------- Poker table ---------- */
 
 .table-wrap {
   position: relative;
@@ -339,6 +457,11 @@ button {
   border-radius: 14px;
   box-shadow: 0 6px 18px rgba(25, 32, 43, 0.1);
   text-align: center;
+  transition: transform 160ms var(--ios-spring), box-shadow 160ms ease;
+}
+
+.seat:active {
+  transform: translate(-50%, -50%) scale(0.94);
 }
 
 .seat-flag {
@@ -500,6 +623,8 @@ button {
   background: #eef0f2;
 }
 
+/* ---------- Tag pill (selectable) ---------- */
+
 .tag-grid {
   display: flex;
   flex-wrap: wrap;
@@ -513,6 +638,11 @@ button {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 999px;
+  transition: transform 140ms var(--ios-spring), background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.tag:active {
+  transform: scale(0.92);
 }
 
 .tag.selected {
@@ -537,19 +667,41 @@ button {
   grid-template-columns: 58px 1fr auto;
 }
 
+/* ---------- Action sheet ---------- */
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
   z-index: 20;
   display: grid;
   align-items: end;
-  background: rgba(0, 0, 0, 0.26);
+  background: rgba(0, 0, 0, 0);
+  transition: background-color 280ms ease;
+}
+
+.sheet-backdrop.show {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.sheet-backdrop.closing {
+  background: rgba(0, 0, 0, 0);
 }
 
 .sheet {
   width: min(720px, 100%);
   margin: 0 auto;
   padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  transform: translateY(110%);
+  transition: transform 360ms var(--ios-ease);
+  will-change: transform;
+}
+
+.sheet-backdrop.show .sheet {
+  transform: translateY(0);
+}
+
+.sheet-backdrop.closing .sheet {
+  transform: translateY(110%);
 }
 
 .sheet-panel {
@@ -575,6 +727,11 @@ button {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   font-weight: 650;
+  transition: background-color 120ms ease;
+}
+
+.sheet-action:active {
+  background: var(--panel-press);
 }
 
 .sheet-action.danger {
@@ -589,7 +746,15 @@ button {
   background: var(--panel);
   border-radius: 16px;
   font-weight: 750;
+  transition: background-color 120ms ease, transform 140ms var(--ios-ease);
 }
+
+.sheet-cancel:active {
+  background: var(--panel-press);
+  transform: scale(0.985);
+}
+
+/* ---------- Misc ---------- */
 
 .appearance-grid {
   display: grid;
@@ -646,5 +811,107 @@ button {
 
   .appearance-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Page transitions (push / pop) ---------- */
+
+.page-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--bg);
+  pointer-events: none;
+  will-change: transform, filter;
+}
+
+.page-overlay-inner {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.page-overlay-inner > .screen,
+.page-overlay-inner > .auth-card {
+  margin: 0;
+  padding-top: env(safe-area-inset-top);
+}
+
+#app.page-in-forward,
+#app.page-in-back {
+  position: relative;
+  z-index: 60;
+  will-change: transform;
+}
+
+#app.page-in-forward {
+  animation: page-in-forward 360ms var(--ios-ease) both;
+}
+
+#app.page-in-back {
+  animation: page-in-back 360ms var(--ios-ease) both;
+}
+
+.page-overlay.out-forward {
+  animation: page-out-forward 360ms var(--ios-ease) both;
+}
+
+.page-overlay.out-back {
+  z-index: 70;
+  animation: page-out-back 360ms var(--ios-ease) both;
+}
+
+@keyframes page-in-forward {
+  from { transform: translateX(100%); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25); }
+  to   { transform: translateX(0);    box-shadow: -8px 0 0 rgba(0, 0, 0, 0); }
+}
+
+@keyframes page-out-forward {
+  from { transform: translateX(0);    filter: brightness(1); }
+  to   { transform: translateX(-22%); filter: brightness(0.78); }
+}
+
+@keyframes page-in-back {
+  from { transform: translateX(-22%); filter: brightness(0.78); }
+  to   { transform: translateX(0);    filter: brightness(1); }
+}
+
+@keyframes page-out-back {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+
+/* ---------- Swipe-back gesture (live drag) ---------- */
+
+#app.swipe-dragging,
+.page-overlay.swipe-dragging {
+  animation: none !important;
+  transition: none !important;
+  will-change: transform, filter;
+}
+
+#app.swipe-snap-back,
+.page-overlay.swipe-snap-back {
+  transition: transform 220ms var(--ios-ease), filter 220ms var(--ios-ease);
+}
+
+#app.swipe-complete {
+  transition: transform 260ms var(--ios-ease);
+}
+
+.page-overlay.swipe-complete {
+  transition: transform 260ms var(--ios-ease), filter 260ms var(--ios-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.page-in-forward,
+  #app.page-in-back,
+  .page-overlay.out-forward,
+  .page-overlay.out-back,
+  .sheet,
+  .sheet-backdrop {
+    animation: none !important;
+    transition: none !important;
   }
 }

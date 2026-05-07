@@ -78,6 +78,14 @@ let cache = {
 let theme = localStorage.getItem(THEME_KEY) || "dark";
 applyTheme(theme);
 
+let isFirstRender = true;
+let isTransitioning = false;
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function haptic(ms = 8) {
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {}
+}
+
 function configured() {
   return Boolean(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey && window.supabase);
 }
@@ -102,6 +110,9 @@ async function init() {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
+  bindGlobalScroll();
+  bindSwipeBack();
+
   if (!configured()) {
     renderConfigMissing();
     return;
@@ -113,10 +124,12 @@ async function init() {
   sb.auth.onAuthStateChange((_event, session) => {
     authUser = session?.user || null;
     route = { name: authUser ? "sessions" : "auth" };
+    isFirstRender = true;
     render();
   });
   route = { name: authUser ? "sessions" : "auth" };
-  render();
+  await render();
+  isFirstRender = false;
 }
 
 function renderConfigMissing() {
@@ -146,19 +159,177 @@ async function render() {
   if (route.name === "settings") renderSettings();
 }
 
-function nav(title, left = "", right = "") {
-  return `
+/* ---------- Navigation with transitions ---------- */
+
+async function go(nextRoute, direction = "forward") {
+  if (isTransitioning) return;
+  hideSheet();
+  haptic(direction === "back" ? 6 : 10);
+
+  const currentScreen = app.firstElementChild;
+  if (isFirstRender || reduceMotion() || !currentScreen || direction === "instant") {
+    route = nextRoute;
+    isFirstRender = false;
+    await render();
+    return;
+  }
+
+  isTransitioning = true;
+
+  const overlay = document.createElement("div");
+  overlay.className = "page-overlay";
+  const inner = document.createElement("div");
+  inner.className = "page-overlay-inner";
+  inner.appendChild(currentScreen.cloneNode(true));
+  overlay.appendChild(inner);
+  document.body.appendChild(overlay);
+
+  route = nextRoute;
+  await render();
+  window.scrollTo(0, 0);
+
+  const enterClass = direction === "forward" ? "page-in-forward" : "page-in-back";
+  const exitClass = direction === "forward" ? "out-forward" : "out-back";
+
+  // Force reflow before adding animation classes
+  void overlay.offsetWidth;
+
+  app.classList.add(enterClass);
+  overlay.classList.add(exitClass);
+
+  await new Promise((resolve) => setTimeout(resolve, 380));
+
+  app.classList.remove(enterClass);
+  overlay.remove();
+  isTransitioning = false;
+}
+
+/* ---------- Global scroll: nav scrolled / large title collapse ---------- */
+
+function bindGlobalScroll() {
+  const handler = () => {
+    const navEl = document.querySelector(".nav");
+    if (!navEl) return;
+    const hasLarge = document.querySelector(".has-large-title");
+    if (hasLarge) {
+      const largeTitle = hasLarge.querySelector(".large-title");
+      const bottom = largeTitle ? largeTitle.getBoundingClientRect().bottom : 999;
+      const collapsed = bottom < 48;
+      navEl.classList.toggle("collapsed", collapsed);
+      navEl.classList.toggle("scrolled", collapsed);
+    } else {
+      navEl.classList.toggle("scrolled", (window.scrollY || 0) > 4);
+    }
+  };
+  window.addEventListener("scroll", handler, { passive: true });
+  window.addEventListener("resize", handler);
+}
+
+/* ---------- Swipe-back gesture ---------- */
+
+function bindSwipeBack() {
+  const EDGE_PX = 28;
+  const COMPLETE_RATIO = 0.35;
+  let startX = null, startY = null, dragging = false, dx = 0, hapticFired = false;
+  const screenW = () => window.innerWidth || document.documentElement.clientWidth || 360;
+
+  const getBackRoute = () => {
+    const btn = app.querySelector("[data-nav-back]");
+    if (!btn) return null;
+    try { return JSON.parse(btn.dataset.navBack); } catch { return null; }
+  };
+
+  const reset = () => {
+    startX = null; startY = null; dragging = false; dx = 0; hapticFired = false;
+    app.style.transform = "";
+    app.style.transition = "";
+  };
+
+  app.addEventListener("touchstart", (event) => {
+    if (isTransitioning) return;
+    if (event.touches.length !== 1) return;
+    const t = event.touches[0];
+    if (t.clientX > EDGE_PX) return;
+    if (!getBackRoute()) return;
+    startX = t.clientX;
+    startY = t.clientY;
+    dragging = false;
+    dx = 0;
+    hapticFired = false;
+  }, { passive: true });
+
+  app.addEventListener("touchmove", (event) => {
+    if (startX == null) return;
+    const t = event.touches[0];
+    const moveX = t.clientX - startX;
+    const moveY = Math.abs(t.clientY - startY);
+    if (!dragging) {
+      if (moveX > 8 && moveX > moveY) {
+        dragging = true;
+        app.style.transition = "none";
+      } else if (moveY > 8) {
+        reset();
+        return;
+      } else {
+        return;
+      }
+    }
+    if (moveX < 0) return;
+    dx = moveX;
+    app.style.transform = `translateX(${dx}px)`;
+    if (!hapticFired && dx > screenW() * COMPLETE_RATIO) {
+      haptic(6);
+      hapticFired = true;
+    }
+  }, { passive: true });
+
+  app.addEventListener("touchend", () => {
+    if (!dragging) { reset(); return; }
+    const w = screenW();
+    const passed = dx > w * COMPLETE_RATIO;
+    const back = getBackRoute();
+    if (passed && back) {
+      app.style.transition = "transform 240ms cubic-bezier(0.32, 0.72, 0, 1)";
+      app.style.transform = `translateX(${w}px)`;
+      window.setTimeout(() => {
+        app.style.transition = "";
+        app.style.transform = "";
+        go(back, "instant");
+      }, 240);
+    } else {
+      app.style.transition = "transform 220ms cubic-bezier(0.32, 0.72, 0, 1)";
+      app.style.transform = "";
+      window.setTimeout(() => {
+        app.style.transition = "";
+      }, 220);
+    }
+    startX = null; startY = null; dragging = false; dx = 0; hapticFired = false;
+  });
+
+  app.addEventListener("touchcancel", reset);
+}
+
+/* ---------- Nav helpers ---------- */
+
+function nav(title, left = "", right = "", options = {}) {
+  const small = `
     <header class="nav">
       <div class="nav-left">${left}</div>
       <h1>${escapeHtml(title)}</h1>
       <div class="nav-right">${right}</div>
     </header>
   `;
+  if (options.large) {
+    return small + `<h1 class="large-title">${escapeHtml(title)}</h1>`;
+  }
+  return small;
 }
 
 function backButton(target = { name: "sessions" }) {
-  return `<button class="link-button" data-nav='${JSON.stringify(target)}'>戻る</button>`;
+  return `<button class="link-button" data-nav-back='${JSON.stringify(target)}'>戻る</button>`;
 }
+
+/* ---------- Screens ---------- */
 
 function renderAuth(mode = "login") {
   app.innerHTML = `
@@ -190,11 +361,12 @@ function renderAuth(mode = "login") {
   `;
 
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
-    button.addEventListener("click", () => renderAuth(button.dataset.authMode));
+    button.addEventListener("click", () => { haptic(6); renderAuth(button.dataset.authMode); });
   });
 
   document.querySelector("#auth-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    haptic(10);
     const form = new FormData(event.currentTarget);
     const email = form.get("email");
     const password = form.get("password");
@@ -208,6 +380,7 @@ function renderAuth(mode = "login") {
 
   document.querySelectorAll("[data-oauth]").forEach((button) => {
     button.addEventListener("click", async () => {
+      haptic(10);
       await client().auth.signInWithOAuth({
         provider: button.dataset.oauth,
         options: { redirectTo: location.href.split("#")[0] }
@@ -216,6 +389,7 @@ function renderAuth(mode = "login") {
   });
 
   document.querySelector("[data-reset-password]").addEventListener("click", async () => {
+    haptic(8);
     const email = document.querySelector("[name='email']").value;
     if (!email) {
       setStatus("auth-status", "メールアドレスを入力してください");
@@ -229,8 +403,8 @@ function renderAuth(mode = "login") {
 async function renderSessions() {
   await loadSessions();
   app.innerHTML = `
-    <main class="screen">
-      ${nav("セッション", "", `<button class="link-button" data-nav='{"name":"settings"}'>設定</button>`)}
+    <main class="screen has-large-title">
+      ${nav("セッション", "", `<button class="link-button" data-nav='{"name":"settings"}'>設定</button>`, { large: true })}
       <button class="primary-button" data-nav='{"name":"new-session"}'>新規セッション</button>
       <section class="section">
         <div class="list">
@@ -279,6 +453,7 @@ function renderNewSession() {
   bindNav();
   document.querySelector("#session-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    haptic(10);
     const form = new FormData(event.currentTarget);
     const payload = {
       user_id: authUser.id,
@@ -291,8 +466,7 @@ function renderNewSession() {
       setStatus("session-status", error.message);
       return;
     }
-    route = { name: "table", sessionId: data.id };
-    render();
+    go({ name: "table", sessionId: data.id }, "forward");
   });
 }
 
@@ -300,8 +474,7 @@ async function renderTable(sessionId) {
   await loadAllForSession(sessionId);
   const session = cache.sessions.find((item) => item.id === sessionId);
   if (!session) {
-    route = { name: "sessions" };
-    render();
+    go({ name: "sessions" }, "back");
     return;
   }
 
@@ -322,11 +495,12 @@ async function renderTable(sessionId) {
   `;
   bindNav();
   document.querySelector("#seat-count").addEventListener("change", async (event) => {
+    haptic(6);
     await client().from("sessions").update({ seat_count: Number(event.target.value) }).eq("id", session.id);
     render();
   });
   document.querySelectorAll("[data-seat]").forEach((seatButton) => {
-    seatButton.addEventListener("click", () => openSeatSheet(session, Number(seatButton.dataset.seat)));
+    seatButton.addEventListener("click", () => { haptic(8); openSeatSheet(session, Number(seatButton.dataset.seat)); });
   });
 }
 
@@ -382,11 +556,11 @@ function openSeatSheet(session, seatNo) {
   const seat = cache.seats.find((item) => item.session_id === session.id && item.seat_no === seatNo);
   const player = seat ? cache.players.find((item) => item.id === seat.player_id) : null;
   const actions = player ? [
-    ["人物詳細を見る", () => go({ name: "player", playerId: player.id, context: { sessionId: session.id, seatNo } })],
+    ["人物詳細を見る", () => go({ name: "player", playerId: player.id, context: { sessionId: session.id, seatNo } }, "forward")],
     ["席から外す", () => removeSeat(seat.id)],
     ["Hero席にする", () => setHero(session.id, seatNo)]
   ] : [
-    ["既存人物を選ぶ", () => go({ name: "select-player", sessionId: session.id, seatNo })],
+    ["既存人物を選ぶ", () => go({ name: "select-player", sessionId: session.id, seatNo }, "forward")],
     ["新規人物を作る", () => createEmptyPlayer(session.id, seatNo)],
     ["Hero席にする", () => setHero(session.id, seatNo)]
   ];
@@ -423,12 +597,14 @@ async function renderPlayerSelect(sessionId, seatNo) {
   });
   document.querySelectorAll("[data-type-filter]").forEach((button) => {
     button.addEventListener("click", () => {
+      haptic(6);
       route.typeFilter = route.typeFilter === button.dataset.typeFilter ? "" : button.dataset.typeFilter;
       render();
     });
   });
   document.querySelectorAll("[data-action-filter]").forEach((button) => {
     button.addEventListener("click", () => {
+      haptic(6);
       route.actionFilter = route.actionFilter === button.dataset.actionFilter ? "" : button.dataset.actionFilter;
       render();
     });
@@ -461,8 +637,7 @@ async function renderPlayer(playerId, context) {
   }
   const player = cache.players.find((item) => item.id === playerId);
   if (!player) {
-    route = { name: "sessions" };
-    render();
+    go({ name: "sessions" }, "back");
     return;
   }
   app.innerHTML = `
@@ -501,6 +676,7 @@ async function renderPlayer(playerId, context) {
   bindAppearancePreview();
   document.querySelector("#player-form").addEventListener("submit", (event) => savePlayer(event, player, context));
   document.querySelector("#save-player-top").addEventListener("click", () => {
+    haptic(8);
     document.querySelector("#player-form").requestSubmit();
   });
   document.querySelector("#delete-player").addEventListener("click", () => confirmDeletePlayer(player.id, context.sessionId));
@@ -520,8 +696,8 @@ function appearanceControls(appearance) {
 
 function renderSettings() {
   app.innerHTML = `
-    <main class="screen">
-      ${nav("設定", backButton())}
+    <main class="screen has-large-title">
+      ${nav("設定", backButton(), "", { large: true })}
       <section class="section">
         <div class="section-title">表示</div>
         <div class="list">
@@ -563,17 +739,20 @@ function renderSettings() {
   bindNav();
   document.querySelectorAll("[data-theme-choice]").forEach((button) => {
     button.addEventListener("click", () => {
+      haptic(6);
       applyTheme(button.dataset.themeChoice);
       renderSettings();
     });
   });
-  document.querySelector("#logout").addEventListener("click", () => client().auth.signOut());
+  document.querySelector("#logout").addEventListener("click", () => { haptic(8); client().auth.signOut(); });
   document.querySelector("#password-reset").addEventListener("click", async () => {
+    haptic(8);
     const { error } = await client().auth.resetPasswordForEmail(authUser.email, { redirectTo: location.href.split("#")[0] });
     setStatus("settings-status", error ? error.message : "再設定メールを送信しました");
   });
   document.querySelector("#delete-account").addEventListener("click", () => {
     if (!confirm("アカウントと保存データを削除しますか？")) return;
+    haptic(15);
     client().functions.invoke("delete-account").then(async ({ error }) => {
       if (error) {
         setStatus("settings-status", error.message);
@@ -620,6 +799,7 @@ async function loadAllForSession(sessionId) {
 
 async function createEmptyPlayer(sessionId, seatNo) {
   hideSheet();
+  haptic(8);
   const { data, error } = await client().from("players").insert({
     user_id: authUser.id,
     appearance: DEFAULT_APPEARANCE,
@@ -641,26 +821,30 @@ async function assignPlayer(sessionId, seatNo, playerId, options = {}) {
     player_id: playerId
   }, { onConflict: "session_id,seat_no" });
   await client().from("sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessionId);
-  route = options.openPlayer
-    ? { name: "player", playerId, context: { sessionId, seatNo } }
-    : { name: "table", sessionId };
-  render();
+  if (options.openPlayer) {
+    go({ name: "player", playerId, context: { sessionId, seatNo } }, "forward");
+  } else {
+    go({ name: "table", sessionId }, "back");
+  }
 }
 
 async function removeSeat(seatId) {
   hideSheet();
+  haptic(8);
   await client().from("session_seats").delete().eq("id", seatId);
   render();
 }
 
 async function setHero(sessionId, seatNo) {
   hideSheet();
+  haptic(8);
   await client().from("sessions").update({ hero_seat: seatNo }).eq("id", sessionId);
   render();
 }
 
 async function savePlayer(event, player, context = {}) {
   event.preventDefault();
+  haptic(10);
   const form = new FormData(event.currentTarget);
   const appearance = appearanceFromForm(form);
   const payload = {
@@ -674,8 +858,8 @@ async function savePlayer(event, player, context = {}) {
   const { error } = await client().from("players").update(payload).eq("id", player.id);
   setStatus("player-status", error ? error.message : "保存しました");
   if (!error) {
-    route = context.sessionId ? { name: "table", sessionId: context.sessionId } : { name: "sessions" };
-    render();
+    if (context.sessionId) go({ name: "table", sessionId: context.sessionId }, "back");
+    else go({ name: "sessions" }, "back");
   }
 }
 
@@ -701,9 +885,10 @@ function appearanceFromForm(form) {
 
 function confirmDeletePlayer(playerId, sessionId) {
   if (!confirm("この人物を削除しますか？関連する席とメモも削除されます。")) return;
+  haptic(15);
   client().from("players").delete().eq("id", playerId).then(() => {
-    route = sessionId ? { name: "table", sessionId } : { name: "sessions" };
-    render();
+    if (sessionId) go({ name: "table", sessionId }, "back");
+    else go({ name: "sessions" }, "back");
   });
 }
 
@@ -745,14 +930,11 @@ function playerCasinoHistory(playerId) {
 
 function bindNav() {
   document.querySelectorAll("[data-nav]").forEach((button) => {
-    button.addEventListener("click", () => go(JSON.parse(button.dataset.nav)));
+    button.addEventListener("click", () => go(JSON.parse(button.dataset.nav), "forward"));
   });
-}
-
-function go(nextRoute) {
-  hideSheet();
-  route = nextRoute;
-  render();
+  document.querySelectorAll("[data-nav-back]").forEach((button) => {
+    button.addEventListener("click", () => go(JSON.parse(button.dataset.navBack), "back"));
+  });
 }
 
 function tagButton(tag, selected, dataName) {
@@ -764,7 +946,7 @@ function tagButton(tag, selected, dataName) {
 function bindTagToggles() {
   ["current-type", "current-action"].forEach((name) => {
     document.querySelectorAll(`[data-${name}]`).forEach((button) => {
-      button.addEventListener("click", () => button.classList.toggle("selected"));
+      button.addEventListener("click", () => { haptic(5); button.classList.toggle("selected"); });
     });
   });
 }
@@ -779,6 +961,7 @@ function toCamel(value) {
 
 function showSheet(title, actions) {
   hideSheet();
+  haptic(6);
   const backdrop = document.createElement("div");
   backdrop.className = "sheet-backdrop";
   backdrop.innerHTML = `
@@ -791,16 +974,28 @@ function showSheet(title, actions) {
     </div>
   `;
   document.body.appendChild(backdrop);
+  // Trigger slide-up on next frame
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => backdrop.classList.add("show"));
+  });
   backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop || event.target.classList.contains("sheet-cancel")) hideSheet();
+    if (event.target === backdrop || event.target.classList.contains("sheet-cancel")) {
+      haptic(5);
+      hideSheet();
+    }
   });
   backdrop.querySelectorAll("[data-action-index]").forEach((button) => {
-    button.addEventListener("click", () => actions[Number(button.dataset.actionIndex)][1]());
+    button.addEventListener("click", () => { haptic(8); actions[Number(button.dataset.actionIndex)][1](); });
   });
 }
 
 function hideSheet() {
-  document.querySelector(".sheet-backdrop")?.remove();
+  const backdrop = document.querySelector(".sheet-backdrop");
+  if (!backdrop) return;
+  if (reduceMotion()) { backdrop.remove(); return; }
+  backdrop.classList.remove("show");
+  backdrop.classList.add("closing");
+  window.setTimeout(() => backdrop.remove(), 320);
 }
 
 function avatar(appearance = {}, className = "avatar") {
