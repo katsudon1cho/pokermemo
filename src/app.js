@@ -327,25 +327,75 @@ function bindSwipeBack() {
     const w = screenW();
     const passed = dx > w * COMPLETE_RATIO;
     const back = getBackRoute();
+    const releasedDx = dx;
+    startX = null; startY = null; dragging = false; dx = 0; hapticFired = false;
     if (passed && back) {
-      app.style.transition = "transform 240ms cubic-bezier(0.32, 0.72, 0, 1)";
-      app.style.transform = `translateX(${w}px)`;
-      window.setTimeout(() => {
-        app.style.transition = "";
-        app.style.transform = "";
-        go(back, "instant");
-      }, 240);
+      completeSwipeBack(releasedDx, back);
     } else {
       app.style.transition = "transform 220ms cubic-bezier(0.32, 0.72, 0, 1)";
       app.style.transform = "";
-      window.setTimeout(() => {
-        app.style.transition = "";
-      }, 220);
+      window.setTimeout(() => { app.style.transition = ""; }, 220);
     }
-    startX = null; startY = null; dragging = false; dx = 0; hapticFired = false;
   });
 
   app.addEventListener("touchcancel", reset);
+}
+
+async function completeSwipeBack(currentDx, backRoute) {
+  if (isTransitioning) return;
+  isTransitioning = true;
+
+  const w = window.innerWidth || document.documentElement.clientWidth || 360;
+
+  // Move the currently-translated old screen into an overlay so we can
+  // slide it off without holding the live #app hostage. The overlay starts
+  // at the exact pixel offset the finger left it at.
+  const overlay = document.createElement("div");
+  overlay.className = "page-overlay";
+  overlay.style.zIndex = "60";
+  overlay.style.transform = `translate3d(${currentDx}px, 0, 0)`;
+  const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  const inner = document.createElement("div");
+  inner.className = "page-overlay-inner";
+  if (scrollY) inner.style.transform = `translate3d(0, ${-scrollY}px, 0)`;
+  inner.appendChild(app.firstElementChild.cloneNode(true));
+  overlay.appendChild(inner);
+  document.body.appendChild(overlay);
+
+  // Reset #app: clear inline transform from the live drag, hide while we
+  // render the back target into it. Behind the sliding overlay, #app will
+  // hold the destination screen with no animation needed.
+  app.style.transform = "";
+  app.style.transition = "";
+  app.style.visibility = "hidden";
+
+  const renderPromise = (async () => {
+    route = backRoute;
+    await render();
+    window.scrollTo(0, 0);
+    app.style.visibility = "";
+  })();
+
+  // Animate overlay (old screen) sliding off to the right. Duration scales
+  // a little with how far the finger had already pushed it — closer to the
+  // edge means a shorter remaining slide.
+  const remaining = Math.max(0, w - currentDx);
+  const duration = Math.round(160 + (remaining / w) * 180);
+  const overlayAnim = overlay.animate(
+    [
+      { transform: `translate3d(${currentDx}px, 0, 0)` },
+      { transform: "translate3d(100%, 0, 0)" }
+    ],
+    { duration, easing: "cubic-bezier(0.32, 0.72, 0, 1)", fill: "forwards" }
+  );
+
+  try {
+    await Promise.all([renderPromise, overlayAnim.finished]);
+  } catch (_) {}
+
+  overlayAnim.cancel();
+  overlay.remove();
+  isTransitioning = false;
 }
 
 /* ---------- Nav helpers ---------- */

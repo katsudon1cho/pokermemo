@@ -1,4 +1,4 @@
-const CACHE_NAME = "pokermemo-v17";
+const CACHE_NAME = "pokermemo-v18";
 const ASSETS = [
   "./",
   "./index.html",
